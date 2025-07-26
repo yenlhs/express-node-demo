@@ -118,5 +118,5 @@ tasks:
   check-url:
     desc: Test the load balancer HTTPS URL
     cmds:
-      - terraform -chdir=terraform output load_balancer_https_url
-      - curl -k -v $(terraform -chdir=terraform output -raw load_balancer_https_url) || echo "HTTPS connection failed"
+      - terraform -chdir=terraform output load_balancer_url
+      - curl -k -v $(terraform -chdir=terraform output -raw load_balancer_url) || echo "HTTPS connection failed"

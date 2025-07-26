@@ -9,11 +9,6 @@ output "load_balancer_dns" {
 }
 
 output "load_balancer_url" {
-  description = "Full URL of the load balancer"
-  value       = "http://${aws_alb.main.dns_name}"
-}
-
-output "load_balancer_https_url" {
   description = "HTTPS URL of the load balancer"
   value       = "https://${aws_alb.main.dns_name}"
 }
