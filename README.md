@@ -180,114 +180,102 @@ The Terraform configuration creates:
 
 ## GitHub Actions Deployment
 
-The project includes automated deployment via GitHub Actions. To set this up:
+The project includes two automated deployment workflows via GitHub Actions:
 
-### Prerequisites
+### 1. Docker Application Deployment (`deploy.yml`)
 
-1. **Add AWS Secrets to GitHub Repository**:
+**Triggers**: Changes to application code (excluding Terraform files)
 
-   - Go to your GitHub repository → Settings → Secrets and variables → Actions
-   - Add the following secrets:
-     - `AWS_ACCESS_KEY_ID`: Your AWS access key
-     - `AWS_SECRET_ACCESS_KEY`: Your AWS secret access key
+**What it does**:
 
-2. **AWS IAM Permissions**: Ensure your AWS user has the following permissions:
-   ```json
-   {
-   	"Version": "2012-10-17",
-   	"Statement": [
-   		{
-   			"Effect": "Allow",
-   			"Action": [
-   				"ecr:GetAuthorizationToken",
-   				"ecr:BatchCheckLayerAvailability",
-   				"ecr:GetDownloadUrlForLayer",
-   				"ecr:BatchGetImage",
-   				"ecr:PutImage",
-   				"ecr:InitiateLayerUpload",
-   				"ecr:UploadLayerPart",
-   				"ecr:CompleteLayerUpload",
-   				"ecs:UpdateService",
-   				"ecs:DescribeServices",
-   				"ecs:DescribeTasks",
-   				"elbv2:DescribeLoadBalancers",
-   				"elbv2:DescribeTargetGroups"
-   			],
-   			"Resource": "*"
-   		}
-   	]
-   }
-   ```
+- Builds and pushes Docker images to ECR
+- Updates ECS service with new image
+- Tests the deployment
+
+**Prerequisites**:
+
+- AWS credentials configured in GitHub secrets
+
+### 2. Terraform Infrastructure Deployment (`terraform-deploy.yml`)
+
+**Triggers**: Changes to Terraform files only
+
+**What it does**:
+
+- Validates and formats Terraform code
+- Plans infrastructure changes
+- Applies changes on push to main
+- Comments PRs with plan details
+
+**Prerequisites**:
+
+- AWS credentials configured in GitHub secrets
+- Full AWS permissions for infrastructure management
+
+### Required AWS Secrets
+
+Add these secrets to your GitHub repository (Settings → Secrets and variables → Actions):
+
+- `AWS_ACCESS_KEY_ID`: Your AWS access key
+- `AWS_SECRET_ACCESS_KEY`: Your AWS secret access key
+
+### AWS IAM Permissions
+
+**For Docker Deployment**:
+
+```json
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Effect": "Allow",
+			"Action": [
+				"ecr:GetAuthorizationToken",
+				"ecr:BatchCheckLayerAvailability",
+				"ecr:GetDownloadUrlForLayer",
+				"ecr:BatchGetImage",
+				"ecr:PutImage",
+				"ecr:InitiateLayerUpload",
+				"ecr:UploadLayerPart",
+				"ecr:CompleteLayerUpload",
+				"ecs:UpdateService",
+				"ecs:DescribeServices",
+				"ecs:DescribeTasks",
+				"elbv2:DescribeLoadBalancers",
+				"elbv2:DescribeTargetGroups"
+			],
+			"Resource": "*"
+		}
+	]
+}
+```
+
+**For Terraform Deployment** (additional permissions):
+
+```json
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Effect": "Allow",
+			"Action": [
+				"ec2:*",
+				"ecs:*",
+				"ecr:*",
+				"elasticloadbalancing:*",
+				"iam:*",
+				"logs:*",
+				"acm:*"
+			],
+			"Resource": "*"
+		}
+	]
+}
+```
 
 ### Workflow Behavior
 
-- **On Push to main**: Builds Docker image, pushes to ECR, and updates ECS service
-- **On Pull Request**: Runs Terraform plan to check infrastructure changes
-- **Infrastructure**: Uses existing manually deployed infrastructure (skips Terraform apply)
-
-### Important Notes
-
-⚠️ **Infrastructure Management**: The GitHub Actions workflow is designed to work with **existing infrastructure** that was deployed manually using `task deploy`. It does not create new infrastructure to avoid conflicts with existing resources.
-
-## GitHub Actions Deployment
-
-The project includes automated deployment via GitHub Actions. To set this up:
-
-### Prerequisites
-
-1. **Add AWS Secrets to GitHub Repository**:
-
-   - Go to your GitHub repository → Settings → Secrets and variables → Actions
-   - Add the following secrets:
-     - `AWS_ACCESS_KEY_ID`: Your AWS access key
-     - `AWS_SECRET_ACCESS_KEY`: Your AWS secret access key
-
-2. **AWS IAM Permissions**: Ensure your AWS user has the following permissions:
-   ```json
-   {
-   	"Version": "2012-10-17",
-   	"Statement": [
-   		{
-   			"Effect": "Allow",
-   			"Action": [
-   				"ecr:GetAuthorizationToken",
-   				"ecr:BatchCheckLayerAvailability",
-   				"ecr:GetDownloadUrlForLayer",
-   				"ecr:BatchGetImage",
-   				"ecr:PutImage",
-   				"ecr:InitiateLayerUpload",
-   				"ecr:UploadLayerPart",
-   				"ecr:CompleteLayerUpload",
-   				"ecs:UpdateService",
-   				"ecs:DescribeServices",
-   				"ecs:ListTasks",
-   				"ecs:DescribeTasks",
-   				"elbv2:DescribeTargetGroups",
-   				"elbv2:DescribeTargetHealth",
-   				"logs:DescribeLogGroups",
-   				"logs:FilterLogEvents"
-   			],
-   			"Resource": "*"
-   		}
-   	]
-   }
-   ```
-
-### Automatic Deployment
-
-The workflow will automatically:
-
-- Build and push Docker image to ECR
-- Run Terraform plan/apply
-- Update ECS service with new image
-- Test the deployment
-- Trigger on pushes to `main`/`master` branch
-
-### Workflow Triggers
-
-- **Push to main/master**: Full deployment with infrastructure updates
-- **Pull Request**: Terraform plan only (no actual deployment)
-- `task tf-apply` - Apply Terraform configuration
-- `task tf-destroy` - Destroy all AWS resources
-- `task ecr-login` - Login to ECR
-- `task docker-build-push` - Build and push to ECR
+- **Application Changes**: Triggers Docker deployment workflow
+- **Infrastructure Changes**: Triggers Terraform deployment workflow
+- **PRs**: Show plans without applying changes
+- **Main Branch**: Apply changes automatically

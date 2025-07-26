@@ -3,8 +3,14 @@ name: Deploy to AWS ECS
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "terraform/**"
+      - ".github/workflows/terraform-deploy.yml"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "terraform/**"
+      - ".github/workflows/terraform-deploy.yml"
 
 env:
   AWS_REGION: ap-southeast-2
@@ -46,25 +52,6 @@ jobs:
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
           echo "Built and pushed image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.5.0"
-
-      - name: Terraform Init
-        working-directory: ./terraform
-        run: terraform init
-
-      - name: Terraform Plan
-        working-directory: ./terraform
-        run: terraform plan -input=false
-
-      - name: Skip Terraform Apply (Infrastructure already exists)
-        if: github.event_name == 'push'
-        run: |
-          echo "✅ Infrastructure already deployed manually"
-          echo "📦 Proceeding with Docker image build and ECS deployment only"
-
       - name: Update ECS service
         if: github.event_name == 'push'
         run: |
@@ -85,8 +72,8 @@ jobs:
       - name: Get deployment URL
         if: github.event_name == 'push'
         run: |
-          echo "Deployment URL:"
-          terraform -chdir=terraform output load_balancer_https_url
+          LB_DNS=$(aws elbv2 describe-load-balancers --names express-node-demo-alb --query 'LoadBalancers[0].DNSName' --output text)
+          echo "Deployment URL: https://$LB_DNS"
 
       - name: Test deployment
         if: github.event_name == 'push'
