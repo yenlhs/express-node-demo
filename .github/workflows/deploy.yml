@@ -59,7 +59,7 @@ jobs:
         working-directory: ./terraform
         run: terraform plan -input=false
 
-            - name: Skip Terraform Apply (Infrastructure already exists)
+      - name: Skip Terraform Apply (Infrastructure already exists)
         if: github.event_name == 'push'
         run: |
           echo "✅ Infrastructure already deployed manually"
