@@ -209,6 +209,57 @@ The project includes automated deployment via GitHub Actions. To set this up:
    				"ecr:CompleteLayerUpload",
    				"ecs:UpdateService",
    				"ecs:DescribeServices",
+   				"ecs:DescribeTasks",
+   				"elbv2:DescribeLoadBalancers",
+   				"elbv2:DescribeTargetGroups"
+   			],
+   			"Resource": "*"
+   		}
+   	]
+   }
+   ```
+
+### Workflow Behavior
+
+- **On Push to main**: Builds Docker image, pushes to ECR, and updates ECS service
+- **On Pull Request**: Runs Terraform plan to check infrastructure changes
+- **Infrastructure**: Uses existing manually deployed infrastructure (skips Terraform apply)
+
+### Important Notes
+
+⚠️ **Infrastructure Management**: The GitHub Actions workflow is designed to work with **existing infrastructure** that was deployed manually using `task deploy`. It does not create new infrastructure to avoid conflicts with existing resources.
+
+## GitHub Actions Deployment
+
+The project includes automated deployment via GitHub Actions. To set this up:
+
+### Prerequisites
+
+1. **Add AWS Secrets to GitHub Repository**:
+
+   - Go to your GitHub repository → Settings → Secrets and variables → Actions
+   - Add the following secrets:
+     - `AWS_ACCESS_KEY_ID`: Your AWS access key
+     - `AWS_SECRET_ACCESS_KEY`: Your AWS secret access key
+
+2. **AWS IAM Permissions**: Ensure your AWS user has the following permissions:
+   ```json
+   {
+   	"Version": "2012-10-17",
+   	"Statement": [
+   		{
+   			"Effect": "Allow",
+   			"Action": [
+   				"ecr:GetAuthorizationToken",
+   				"ecr:BatchCheckLayerAvailability",
+   				"ecr:GetDownloadUrlForLayer",
+   				"ecr:BatchGetImage",
+   				"ecr:PutImage",
+   				"ecr:InitiateLayerUpload",
+   				"ecr:UploadLayerPart",
+   				"ecr:CompleteLayerUpload",
+   				"ecs:UpdateService",
+   				"ecs:DescribeServices",
    				"ecs:ListTasks",
    				"ecs:DescribeTasks",
    				"elbv2:DescribeTargetGroups",
