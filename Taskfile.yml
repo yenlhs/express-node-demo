@@ -1,0 +1,122 @@
+# https://taskfile.dev
+
+version: "3"
+
+tasks:
+  start:
+    desc: Start the Express app with Docker Compose (hot reload enabled)
+    cmds:
+      - docker-compose up --build -d
+
+  stop:
+    desc: Stop the Docker containers
+    cmds:
+      - docker-compose down
+
+  restart:
+    desc: Restart the Docker containers
+    cmds:
+      - task: stop
+      - task: start
+
+  logs:
+    desc: Show logs from the running containers
+    cmds:
+      - docker-compose logs -f
+
+  build:
+    desc: Build the Docker image without starting
+    cmds:
+      - docker-compose build
+
+  clean:
+    desc: Remove containers, networks, and images
+    cmds:
+      - docker-compose down --volumes --remove-orphans
+      - docker system prune -f
+
+  # AWS Deployment Tasks
+  tf-init:
+    desc: Initialize Terraform
+    dir: terraform
+    cmds:
+      - terraform init
+
+  tf-plan:
+    desc: Plan Terraform deployment
+    dir: terraform
+    cmds:
+      - terraform plan
+
+  tf-apply:
+    desc: Apply Terraform deployment
+    dir: terraform
+    cmds:
+      - terraform apply
+
+  tf-destroy:
+    desc: Destroy Terraform infrastructure
+    dir: terraform
+    cmds:
+      - terraform destroy
+
+  ecr-login:
+    desc: Login to ECR
+    cmds:
+      - aws ecr get-login-password --region ap-southeast-2 | docker login --username AWS --password-stdin $(aws sts get-caller-identity --query Account --output text).dkr.ecr.ap-southeast-2.amazonaws.com
+
+  docker-build-push:
+    desc: Build and push Docker image to ECR
+    cmds:
+      - task: ecr-login
+      - docker build --platform linux/amd64 -f Dockerfile.prod -t express-node-demo .
+      - docker tag express-node-demo:latest $(terraform -chdir=terraform output -raw ecr_repository_url):latest
+      - docker push $(terraform -chdir=terraform output -raw ecr_repository_url):latest
+
+  deploy:
+    desc: Complete deployment to AWS ECS
+    cmds:
+      - task: tf-init
+      - task: tf-apply
+      - task: docker-build-push
+      - echo "Deployment complete! App URL:"
+      - terraform -chdir=terraform output load_balancer_url
+
+  deploy-update:
+    desc: Update deployment with new Docker image
+    cmds:
+      - task: docker-build-push
+      - aws ecs update-service --cluster $(terraform -chdir=terraform output -raw ecs_cluster_name) --service $(terraform -chdir=terraform output -raw ecs_service_name) --force-new-deployment --region ap-southeast-2
+
+  # Troubleshooting Tasks
+  debug:
+    desc: Debug ECS deployment issues
+    cmds:
+      - echo "=== ECS Service Status ==="
+      - aws ecs describe-services --cluster $(terraform -chdir=terraform output -raw ecs_cluster_name) --services $(terraform -chdir=terraform output -raw ecs_service_name) --region ap-southeast-2
+      - echo "=== ECS Tasks ==="
+      - aws ecs list-tasks --cluster $(terraform -chdir=terraform output -raw ecs_cluster_name) --service-name $(terraform -chdir=terraform output -raw ecs_service_name) --region ap-southeast-2
+      - echo "=== Target Group Health ==="
+      - aws elbv2 describe-target-health --target-group-arn $(aws elbv2 describe-target-groups --names express-node-demo-tg --region ap-southeast-2 --query 'TargetGroups[0].TargetGroupArn' --output text) --region ap-southeast-2
+
+  check-logs:
+    desc: Check CloudWatch logs for errors
+    cmds:
+      - aws logs tail $(terraform -chdir=terraform output -raw cloudwatch_log_group) --region ap-southeast-2 --follow
+
+  check-tasks:
+    desc: Check running ECS tasks
+    cmds:
+      - aws ecs describe-tasks --cluster $(terraform -chdir=terraform output -raw ecs_cluster_name) --tasks $(aws ecs list-tasks --cluster $(terraform -chdir=terraform output -raw ecs_cluster_name) --service-name $(terraform -chdir=terraform output -raw ecs_service_name) --region ap-southeast-2 --query 'taskArns[0]' --output text) --region ap-southeast-2
+
+  restart-service:
+    desc: Force restart ECS service
+    cmds:
+      - aws ecs update-service --cluster $(terraform -chdir=terraform output -raw ecs_cluster_name) --service $(terraform -chdir=terraform output -raw ecs_service_name) --force-new-deployment --region ap-southeast-2
+      - echo "Service restart initiated. Wait 2-3 minutes for new tasks to start."
+
+  check-url:
+    desc: Test the load balancer HTTPS URL
+    cmds:
+      - terraform -chdir=terraform output load_balancer_https_url
+      - curl -k -v $(terraform -chdir=terraform output -raw load_balancer_https_url) || echo "HTTPS connection failed"
