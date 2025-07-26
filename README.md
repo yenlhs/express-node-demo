@@ -177,6 +177,65 @@ The Terraform configuration creates:
 - `task deploy-update` - Update with new Docker image
 - `task tf-init` - Initialize Terraform
 - `task tf-plan` - Show Terraform plan
+
+## GitHub Actions Deployment
+
+The project includes automated deployment via GitHub Actions. To set this up:
+
+### Prerequisites
+
+1. **Add AWS Secrets to GitHub Repository**:
+
+   - Go to your GitHub repository → Settings → Secrets and variables → Actions
+   - Add the following secrets:
+     - `AWS_ACCESS_KEY_ID`: Your AWS access key
+     - `AWS_SECRET_ACCESS_KEY`: Your AWS secret access key
+
+2. **AWS IAM Permissions**: Ensure your AWS user has the following permissions:
+   ```json
+   {
+   	"Version": "2012-10-17",
+   	"Statement": [
+   		{
+   			"Effect": "Allow",
+   			"Action": [
+   				"ecr:GetAuthorizationToken",
+   				"ecr:BatchCheckLayerAvailability",
+   				"ecr:GetDownloadUrlForLayer",
+   				"ecr:BatchGetImage",
+   				"ecr:PutImage",
+   				"ecr:InitiateLayerUpload",
+   				"ecr:UploadLayerPart",
+   				"ecr:CompleteLayerUpload",
+   				"ecs:UpdateService",
+   				"ecs:DescribeServices",
+   				"ecs:ListTasks",
+   				"ecs:DescribeTasks",
+   				"elbv2:DescribeTargetGroups",
+   				"elbv2:DescribeTargetHealth",
+   				"logs:DescribeLogGroups",
+   				"logs:FilterLogEvents"
+   			],
+   			"Resource": "*"
+   		}
+   	]
+   }
+   ```
+
+### Automatic Deployment
+
+The workflow will automatically:
+
+- Build and push Docker image to ECR
+- Run Terraform plan/apply
+- Update ECS service with new image
+- Test the deployment
+- Trigger on pushes to `main`/`master` branch
+
+### Workflow Triggers
+
+- **Push to main/master**: Full deployment with infrastructure updates
+- **Pull Request**: Terraform plan only (no actual deployment)
 - `task tf-apply` - Apply Terraform configuration
 - `task tf-destroy` - Destroy all AWS resources
 - `task ecr-login` - Login to ECR
