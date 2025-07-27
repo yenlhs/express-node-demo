@@ -55,22 +55,42 @@ jobs:
         env:
           TF_VAR_aws_region: ${{ env.AWS_REGION }}
 
-      - name: Terraform Apply
-        if: github.event_name == 'push'
-        working-directory: ./terraform
-        run: terraform apply -auto-approve tfplan
-        env:
-          TF_VAR_aws_region: ${{ env.AWS_REGION }}
+          - name: Update ECS Service to 2 Containers
+      if: github.event_name == 'push'
+      run: |
+        echo "Updating ECS service to run 2 containers..."
+        aws ecs update-service \
+          --cluster express-node-demo-cluster \
+          --service express-node-demo-service \
+          --desired-count 2 \
+          --region ap-southeast-2
+        
+        echo "Waiting for service to stabilize..."
+        aws ecs wait services-stable \
+          --cluster express-node-demo-cluster \
+          --services express-node-demo-service \
+          --region ap-southeast-2
+        
+        echo "✅ ECS service updated to 2 containers"
 
-      - name: Show Terraform Outputs
-        if: github.event_name == 'push'
-        working-directory: ./terraform
-        run: |
-          echo "=== Terraform Deployment Complete ==="
-          echo "Load Balancer URL: $(terraform output -raw load_balancer_url)"
-          echo "ECS Cluster: $(terraform output -raw ecs_cluster_name)"
-          echo "ECS Service: $(terraform output -raw ecs_service_name)"
-          echo "ECR Repository: $(terraform output -raw ecr_repository_url)"
+          - name: Show Deployment Status
+      if: github.event_name == 'push'
+      run: |
+        echo "=== ECS Service Update Complete ==="
+        LB_DNS=$(aws elbv2 describe-load-balancers --names express-node-demo-alb --query 'LoadBalancers[0].DNSName' --output text)
+        echo "Load Balancer URL: https://$LB_DNS"
+        echo "ECS Cluster: express-node-demo-cluster"
+        echo "ECS Service: express-node-demo-service"
+        echo "ECR Repository: 189864887312.dkr.ecr.ap-southeast-2.amazonaws.com/express-node-demo"
+        
+        # Show current service status
+        echo ""
+        echo "Current ECS Service Status:"
+        aws ecs describe-services \
+          --cluster express-node-demo-cluster \
+          --services express-node-demo-service \
+          --query 'services[0].{DesiredCount:desiredCount,RunningCount:runningCount,PendingCount:pendingCount}' \
+          --output table
 
       - name: Comment PR with Plan
         if: github.event_name == 'pull_request'
