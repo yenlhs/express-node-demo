@@ -49,28 +49,66 @@ jobs:
         working-directory: ./terraform
         run: terraform validate
 
+      - name: Check Current State
+        if: github.event_name == 'push'
+        working-directory: ./terraform
+        run: |
+          echo "🔍 Checking current Terraform state..."
+          if terraform state list 2>/dev/null | grep -q .; then
+            echo "✅ Terraform state exists - this will be an UPDATE"
+            echo "EXISTING_STATE=true" >> $GITHUB_ENV
+          else
+            echo "🆕 No Terraform state found - this will be a NEW DEPLOYMENT"
+            echo "EXISTING_STATE=false" >> $GITHUB_ENV
+          fi
+
       - name: Terraform Plan
         working-directory: ./terraform
         run: terraform plan -out=tfplan
         env:
           TF_VAR_aws_region: ${{ env.AWS_REGION }}
 
-      - name: Terraform Apply
+      - name: Terraform Apply (Full Deployment or Update)
         if: github.event_name == 'push'
         working-directory: ./terraform
-        run: terraform apply -auto-approve tfplan
+        run: |
+          if [ "$EXISTING_STATE" = "false" ]; then
+            echo "🚀 Starting FULL INFRASTRUCTURE DEPLOYMENT..."
+            echo "This will create: VPC, ECS Cluster, Load Balancer, Security Groups, etc."
+          else
+            echo "🔄 Starting INFRASTRUCTURE UPDATE..."
+            echo "This will update existing resources based on changes."
+          fi
+
+          terraform apply -auto-approve tfplan
+
+          if [ "$EXISTING_STATE" = "false" ]; then
+            echo "✅ FULL INFRASTRUCTURE DEPLOYMENT COMPLETE!"
+          else
+            echo "✅ INFRASTRUCTURE UPDATE COMPLETE!"
+          fi
+
+      - name: Wait for ECS Service to be Ready
+        if: github.event_name == 'push'
+        run: |
+          echo "⏳ Waiting for ECS service to be ready..."
+          # Wait for the service to exist and be stable
+          aws ecs wait services-stable \
+            --cluster express-node-demo-cluster \
+            --services express-node-demo-service \
+            --region ap-southeast-2 || echo "Service not ready yet, continuing..."
 
       - name: Update ECS Service to 2 Containers
         if: github.event_name == 'push'
         run: |
-          echo "Updating ECS service to run 2 containers..."
+          echo "📈 Updating ECS service to run 2 containers..."
           aws ecs update-service \
             --cluster express-node-demo-cluster \
             --service express-node-demo-service \
             --desired-count 2 \
             --region ap-southeast-2
 
-          echo "Waiting for service to stabilize..."
+          echo "⏳ Waiting for service to stabilize with 2 containers..."
           aws ecs wait services-stable \
             --cluster express-node-demo-cluster \
             --services express-node-demo-service \
@@ -78,24 +116,35 @@ jobs:
 
           echo "✅ ECS service updated to 2 containers"
 
-      - name: Show Deployment Status
+      - name: Show Complete Deployment Status
         if: github.event_name == 'push'
         run: |
-          echo "=== ECS Service Update Complete ==="
-          LB_DNS=$(aws elbv2 describe-load-balancers --names express-node-demo-alb --query 'LoadBalancers[0].DNSName' --output text)
-          echo "Load Balancer URL: https://$LB_DNS"
-          echo "ECS Cluster: express-node-demo-cluster"
-          echo "ECS Service: express-node-demo-service"
-          echo "ECR Repository: 189864887312.dkr.ecr.ap-southeast-2.amazonaws.com/express-node-demo"
+          echo "🎉 === DEPLOYMENT COMPLETE ==="
+
+          # Get load balancer info
+          LB_DNS=$(aws elbv2 describe-load-balancers --names express-node-demo-alb --query 'LoadBalancers[0].DNSName' --output text 2>/dev/null || echo "Load balancer not ready yet")
+
+          echo "🌐 Load Balancer URL: https://$LB_DNS"
+          echo "🏗️  ECS Cluster: express-node-demo-cluster"
+          echo "⚙️  ECS Service: express-node-demo-service"
+          echo "📦 ECR Repository: 189864887312.dkr.ecr.ap-southeast-2.amazonaws.com/express-node-demo"
 
           # Show current service status
           echo ""
-          echo "Current ECS Service Status:"
+          echo "📊 Current ECS Service Status:"
           aws ecs describe-services \
             --cluster express-node-demo-cluster \
             --services express-node-demo-service \
-            --query 'services[0].{DesiredCount:desiredCount,RunningCount:runningCount,PendingCount:pendingCount}' \
-            --output table
+            --query 'services[0].{DesiredCount:desiredCount,RunningCount:runningCount,PendingCount:pendingCount,Status:status}' \
+            --output table || echo "Service status not available yet"
+
+          # Test the endpoint if load balancer is ready
+          if [ "$LB_DNS" != "Load balancer not ready yet" ]; then
+            echo ""
+            echo "🧪 Testing HTTPS endpoint..."
+            sleep 10  # Give it a moment to be fully ready
+            curl -k -f https://$LB_DNS || echo "⚠️  Endpoint test failed, but deployment completed"
+          fi
 
       - name: Comment PR with Plan
         if: github.event_name == 'pull_request'
