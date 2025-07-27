@@ -37,5 +37,5 @@ variable "fargate_memory" {
 variable "app_count" {
   description = "Number of docker containers to run"
   type        = number
-  default     = 1
+  default     = 2
 } 
