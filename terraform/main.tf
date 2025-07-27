@@ -310,7 +310,7 @@ resource "aws_ecs_task_definition" "app" {
       name      = var.app_name
       image     = "${aws_ecr_repository.main.repository_url}:latest"
       essential = true
-      
+
       portMappings = [
         {
           containerPort = var.container_port
