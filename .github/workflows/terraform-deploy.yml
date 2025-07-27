@@ -58,9 +58,48 @@ jobs:
             echo "✅ Terraform state exists - this will be an UPDATE"
             echo "EXISTING_STATE=true" >> $GITHUB_ENV
           else
-            echo "🆕 No Terraform state found - this will be a NEW DEPLOYMENT"
+            echo "🆕 No Terraform state found - checking for existing resources..."
             echo "EXISTING_STATE=false" >> $GITHUB_ENV
           fi
+
+      - name: Import Existing Resources (if needed)
+        if: github.event_name == 'push' && env.EXISTING_STATE == 'false'
+        working-directory: ./terraform
+        run: |
+          echo "🔄 Checking for existing resources to import..."
+
+          # Check if ECR repository exists
+          if aws ecr describe-repositories --repository-names express-node-demo --region ap-southeast-2 >/dev/null 2>&1; then
+            echo "📦 Importing existing ECR repository..."
+            terraform import aws_ecr_repository.main express-node-demo || echo "ECR import failed or already imported"
+          fi
+
+          # Check if ECS cluster exists
+          if aws ecs describe-clusters --clusters express-node-demo-cluster --region ap-southeast-2 --query 'clusters[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+            echo "🏗️ Importing existing ECS cluster..."
+            terraform import aws_ecs_cluster.main express-node-demo-cluster || echo "ECS cluster import failed or already imported"
+          fi
+
+          # Check if IAM role exists
+          if aws iam get-role --role-name express-node-demo-ecsTaskExecutionRole --region ap-southeast-2 >/dev/null 2>&1; then
+            echo "🔐 Importing existing IAM role..."
+            terraform import aws_iam_role.ecs_task_execution_role express-node-demo-ecsTaskExecutionRole || echo "IAM role import failed or already imported"
+          fi
+
+          # Check if CloudWatch log group exists
+          if aws logs describe-log-groups --log-group-name-prefix "/ecs/express-node-demo" --region ap-southeast-2 --query 'logGroups[?logGroupName==`/ecs/express-node-demo`]' --output text 2>/dev/null | grep -q "/ecs/express-node-demo"; then
+            echo "📊 Importing existing CloudWatch log group..."
+            terraform import aws_cloudwatch_log_group.app "/ecs/express-node-demo" || echo "CloudWatch log group import failed or already imported"
+          fi
+
+          # Check if VPC exists (by name tag)
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=express-node-demo-vpc" --query 'Vpcs[0].VpcId' --output text --region ap-southeast-2 2>/dev/null)
+          if [ "$VPC_ID" != "None" ] && [ "$VPC_ID" != "" ]; then
+            echo "🌐 Importing existing VPC..."
+            terraform import aws_vpc.main $VPC_ID || echo "VPC import failed or already imported"
+          fi
+
+          echo "✅ Resource import check complete"
 
       - name: Terraform Plan
         working-directory: ./terraform
